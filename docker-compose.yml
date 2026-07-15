@@ -1,0 +1,135 @@
+version: '3.8'
+
+services:
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: boilerplate_rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  vault:
+    image: hashicorp/vault:latest
+    container_name: boilerplate_vault
+    ports:
+      - "8200:8200"
+    environment:
+      - VAULT_DEV_ROOT_TOKEN_ID=myroot
+      - VAULT_DEV_LISTEN_ADDRESS=0.0.0.0:8200
+    cap_add:
+      - IPC_LOCK
+
+  vault-init:
+    image: hashicorp/vault:latest
+    container_name: boilerplate_vault_init
+    depends_on:
+      - vault
+    environment:
+      - VAULT_ADDR=http://vault:8200
+      - VAULT_TOKEN=myroot
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        sleep 5
+        vault kv put secret/microservices/database host=postgres port=5432 database=EmpDb username=postgres password=postgres
+        vault kv put secret/microservices/rabbitmq host=rabbitmq port=5672 username=guest password=guest
+        vault kv put secret/microservices/graylog host=graylog port=12201 healthUrl=http://graylog:9000/api/system
+        vault kv put secret/microservices/jaeger endpoint=http://jaeger:4317
+        vault kv put secret/microservices/jwt secretKey=ThisIsASuperSecureSecretKeyForJWT2024Enterprise! issuer=BoilerplateIssuer audience=BoilerplateAudience accessTokenExpirationMinutes=60 refreshTokenExpirationDays=7
+        echo "Vault secrets initialized."
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.10.2
+    container_name: boilerplate_elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+    ports:
+      - "9200:9200"
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.10.2
+    container_name: boilerplate_kibana
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    depends_on:
+      - elasticsearch
+
+  mongo:
+    image: mongo:6.0
+    container_name: boilerplate_mongo
+    ports:
+      - "27017:27017"
+
+  graylog:
+    image: graylog/graylog:5.1
+    container_name: boilerplate_graylog
+    environment:
+      - GRAYLOG_PASSWORD_SECRET=somepasswordsecret1234567890
+      - GRAYLOG_ROOT_PASSWORD_SHA2=8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918
+      - GRAYLOG_HTTP_EXTERNAL_URI=http://127.0.0.1:9000/
+      - GRAYLOG_ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - GRAYLOG_MONGODB_URI=mongodb://mongo:27017/graylog
+    ports:
+      - "9000:9000"
+      - "12201:12201/udp"
+    depends_on:
+      - mongo
+      - elasticsearch
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: boilerplate_jaeger
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: boilerplate_postgres
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=EmpDb
+    ports:
+      - "5432:5432"
+
+  gateway-api:
+    build:
+      context: .
+      dockerfile: src/ApiGateway/Gateway.Api/Dockerfile
+    container_name: boilerplate_gateway
+    ports:
+      - "80:8080"
+    environment:
+      - Vault__Address=http://vault:8200
+      - Vault__Token=myroot
+      - Vault__MountPoint=secret
+      - Vault__SecretPath=microservices
+    depends_on:
+      - vault-init
+      - employee-api
+
+  employee-api:
+    build:
+      context: .
+      dockerfile: src/Presentation/EmployeeService.Api/Dockerfile
+    container_name: boilerplate_employeeapi
+    ports:
+      - "5000:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - Vault__Address=http://vault:8200
+      - Vault__Token=myroot
+      - Vault__MountPoint=secret
+      - Vault__SecretPath=microservices
+    depends_on:
+      - vault-init
+      - rabbitmq
+      - graylog
+      - jaeger
+      - postgres

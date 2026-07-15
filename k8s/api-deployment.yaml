@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: employee-api
+  namespace: default
+  labels:
+    app: employee-api
+    tier: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: employee-api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: employee-api
+        tier: backend
+    spec:
+      containers:
+      - name: employee-api
+        image: employee-api:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        env:
+        - name: ASPNETCORE_ENVIRONMENT
+          value: "Production"
+        - name: Vault__Address
+          valueFrom:
+            secretKeyRef:
+              name: vault-credentials
+              key: VAULT_ADDRESS
+        - name: Vault__Token
+          valueFrom:
+            secretKeyRef:
+              name: vault-credentials
+              key: VAULT_TOKEN
+        - name: Vault__MountPoint
+          valueFrom:
+            secretKeyRef:
+              name: vault-credentials
+              key: VAULT_MOUNT_POINT
+        - name: Vault__SecretPath
+          valueFrom:
+            secretKeyRef:
+              name: vault-credentials
+              key: VAULT_SECRET_PATH
+        resources:
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 30
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: employee-api-service
+  namespace: default
+  labels:
+    app: employee-api
+spec:
+  type: ClusterIP
+  selector:
+    app: employee-api
+  ports:
+  - protocol: TCP
+    port: 8080
+    targetPort: 8080
+    name: http
