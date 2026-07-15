@@ -13,7 +13,7 @@ Sistem **Onion Architecture** (Soğan Mimarisi) üzerine kurulmuştur. Katmanlar
 │                 Presentation Layer                │
 │         (API Controllers, Middleware)             │
 ├───────────────────────────────────────────────────┤
-│               Infrastructure Layer               │
+│               Infrastructure Layer                │
 │    (EF Core, Repositories, External Services)     │
 ├───────────────────────────────────────────────────┤
 │                Application Layer                  │
